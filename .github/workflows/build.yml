@@ -1,0 +1,46 @@
+name: Build APK from ZIP
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          ZIP=$(ls *.zip | head -n 1)
+          echo "Using $ZIP"
+          mkdir -p work
+          unzip -q -o "$ZIP" -d work
+          # project folder is the first directory inside work/
+          PROJECT=$(find work -maxdepth 2 -name settings.gradle.kts -printf '%h\n' | head -n 1)
+          echo "PROJECT_DIR=$PROJECT" >> $GITHUB_ENV
+          echo "Project dir: $PROJECT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download uBlock Origin (built-in ad blocker)
+        run: |
+          mkdir -p "$PROJECT_DIR/app/src/main/assets/extensions/ublock"
+          curl -fL -o ublock.xpi "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+          unzip -q -o ublock.xpi -d "$PROJECT_DIR/app/src/main/assets/extensions/ublock"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MiniBrowser-debug-apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
